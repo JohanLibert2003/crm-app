@@ -433,20 +433,29 @@
         function checkPin() {
             const input = document.getElementById('pinInput').value;
             if (input === validPIN) {
-                // Fade out login
-                document.getElementById('loginSection').style.opacity = '0';
-                setTimeout(() => {
-                    document.getElementById('loginSection').style.display = 'none';
-                    document.getElementById('mainNav').style.display = 'flex';
-                    const dashboard = document.getElementById('dashboardSection');
-                    dashboard.style.display = 'block';
-                    dashboard.style.animation = 'slideUp 0.5s ease';
-                    loadCustomers();
-                }, 300);
+                localStorage.setItem('isLoggedIn', 'true'); // Save login state
+                showDashboard();
             } else {
                 showLoginError();
             }
         }
+
+        function showDashboard() {
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('mainNav').style.display = 'flex';
+            const dashboard = document.getElementById('dashboardSection');
+            dashboard.style.display = 'block';
+            dashboard.style.animation = 'slideUp 0.5s ease';
+            loadCustomers();
+        }
+
+        // Check if already logged in on load
+        window.addEventListener('DOMContentLoaded', () => {
+            if (localStorage.getItem('isLoggedIn') === 'true') {
+                document.getElementById('loginSection').style.display = 'none';
+                showDashboard();
+            }
+        });
 
         function toggleForm() {
             const formCard = document.getElementById('formCard');
