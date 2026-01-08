@@ -126,20 +126,28 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        const scriptURL = 'https://script.google.com/macros/s/AKfycbxtBdSb0ICEL-FHcmJme5LI_pnph0ANSW7DPEys-qw6lX_Fw-9w-NWGY5qKNMN3bMEy0Q/exec';
+        const supabaseUrl = 'https://fwtvzwzoblkomtcavhxm.supabase.co';
+        const supabaseKey = 'sb_publishable_Mueecz_BEvJhV9Ff6MsH9A_VggHGgUO';
+        const client = supabase.createClient(supabaseUrl, supabaseKey);
 
-        function loadMandoobs() {
-            fetch(scriptURL)
-                .then(res => res.json())
-                .then(data => {
-                    const uniqueMandoobs = [...new Set(data.map(item => item['المندوب']).filter(Boolean))];
-                    renderList(uniqueMandoobs);
-                })
-                .catch(err => {
-                    console.error('Error fetching data', err);
-                    document.getElementById('loader').innerHTML = '<p class="text-danger">حدث خطأ في جلب البيانات</p>';
-                });
+        async function loadMandoobs() {
+            try {
+                const { data, error } = await client
+                    .from('customers')
+                    .select('agent_name');
+
+                if (error) throw error;
+
+                // Extract unique agent names
+                const uniqueMandoobs = [...new Set(data.map(item => item.agent_name).filter(Boolean))];
+                renderList(uniqueMandoobs);
+
+            } catch (err) {
+                console.error('Error fetching data', err);
+                document.getElementById('loader').innerHTML = '<p class="text-danger">حدث خطأ في جلب البيانات</p>';
+            }
         }
 
         function renderList(list) {
