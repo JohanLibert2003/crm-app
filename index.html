@@ -411,11 +411,15 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // ----------------------------------------------------
         // CONFIGURATION
         // ----------------------------------------------------
-        const scriptURL = 'https://script.google.com/macros/s/AKfycbxtBdSb0ICEL-FHcmJme5LI_pnph0ANSW7DPEys-qw6lX_Fw-9w-NWGY5qKNMN3bMEy0Q/exec';
+        const supabaseUrl = 'https://fwtvzwzoblkomtcavhxm.supabase.co';
+        const supabaseKey = 'sb_publishable_Mueecz_BEvJhV9Ff6MsH9A_VggHGgUO';
+        const client = supabase.createClient(supabaseUrl, supabaseKey);
+
         const validPIN = "1234";
         // ----------------------------------------------------
 
@@ -478,7 +482,7 @@
             }
         }
 
-        function submitForm(e) {
+        async function submitForm(e) {
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
             const originalText = btn.innerHTML;
@@ -489,63 +493,82 @@
             const form = document.forms['customerForm'];
             const formData = new FormData(form);
 
-            fetch(scriptURL, { method: 'POST', body: formData })
-                .then(response => {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'تم الحفظ!',
-                        text: 'تمت إضافة العميل بنجاح',
-                        timer: 2000,
-                        showConfirmButton: false
-                    });
-                    form.reset();
-                    toggleForm();
-                    loadCustomers();
-                })
-                .catch(error => {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'خطأ',
-                        text: 'تعذر الاتصال بالخادم'
-                    });
-                })
-                .finally(() => {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
+            const newCustomer = {
+                agent_name: formData.get('المندوب'),
+                customer_name: formData.get('الاسم'),
+                phone: formData.get('رقم الهاتف'),
+                activity_type: formData.get('نوع النشاط'),
+                service_type: formData.get('الخدمة'),
+                status: formData.get('الحالة'),
+                notes: formData.get('ملاحظات')
+            };
+
+            try {
+                const { data, error } = await client
+                    .from('customers')
+                    .insert([newCustomer]);
+
+                if (error) throw error;
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'تم الحفظ!',
+                    text: 'تمت إضافة العميل بنجاح',
+                    timer: 2000,
+                    showConfirmButton: false
                 });
+                form.reset();
+                toggleForm();
+                loadCustomers();
+            } catch (error) {
+                console.error('Error adding customer:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'خطأ',
+                    text: 'تعذر الاتصال بالخادم: ' + error.message
+                });
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
         }
 
         let allCustomers = [];
 
-        function loadCustomers() {
+        async function loadCustomers() {
             const list = document.getElementById('customerList');
             const loader = document.getElementById('loader');
 
             list.style.opacity = '0.5';
             loader.style.display = 'block';
 
-            fetch(scriptURL)
-                .then(res => res.json())
-                .then(data => {
-                    allCustomers = data.reverse(); // Show newest first
+            try {
+                const { data, error } = await client
+                    .from('customers')
+                    .select('*')
+                    .order('created_at', { ascending: false });
 
-                    // Check for Mandoob Filter
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const mandoobFilter = urlParams.get('mandoob');
+                if (error) throw error;
 
-                    if (mandoobFilter) {
-                        allCustomers = allCustomers.filter(c => c['المندوب'] === mandoobFilter);
-                        document.getElementById('pageTitle').innerHTML = `<i class="fa-solid fa-user-tie me-2"></i> عملاء: ${mandoobFilter}`;
-                    }
+                allCustomers = data;
 
-                    renderList(allCustomers);
-                    loader.style.display = 'none';
-                    list.style.opacity = '1';
-                })
-                .catch(err => {
-                    console.error(err);
-                    loader.innerHTML = '<p class="text-danger">حدث خطأ في جلب البيانات</p>';
-                });
+                // Check for Mandoob Filter
+                const urlParams = new URLSearchParams(window.location.search);
+                const mandoobFilter = urlParams.get('mandoob');
+
+                if (mandoobFilter) {
+                    allCustomers = allCustomers.filter(c => c.agent_name === mandoobFilter);
+                    document.getElementById('pageTitle').innerHTML = `<i class="fa-solid fa-user-tie me-2"></i> عملاء: ${mandoobFilter}`;
+                }
+
+                renderList(allCustomers);
+            } catch (err) {
+                console.error(err);
+                loader.innerHTML = '<p class="text-danger">حدث خطأ في جلب البيانات</p>';
+            } finally {
+                loader.style.display = 'none';
+                list.style.opacity = '1';
+            }
         }
 
         function renderList(customers) {
@@ -562,12 +585,12 @@
             }
 
             customers.forEach((c, index) => {
-                const date = new Date(c['التاريخ']).toLocaleDateString('ar-EG');
+                const date = new Date(c.created_at).toLocaleDateString('ar-EG');
 
                 // Determine Badge Color
                 let badgeClass = 'badge-follow';
-                if (c['الحالة'] === 'جديد') badgeClass = 'badge-new';
-                if (c['الحالة'] === 'مغلق' || c['الحالة'] === 'تم البيع') badgeClass = 'badge-closed';
+                if (c.status === 'جديد') badgeClass = 'badge-new';
+                if (c.status === 'مغلق' || c.status === 'تم البيع') badgeClass = 'badge-closed';
 
                 // Stagger Animation
                 const animationDelay = index * 0.05;
@@ -576,28 +599,28 @@
                     <div class="customer-card" style="animation-delay: ${animationDelay}s">
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div>
-                                <h5 class="fw-bold text-dark mb-1">${c['الاسم']}</h5>
+                                <h5 class="fw-bold text-dark mb-1">${c.customer_name}</h5>
                                 <div class="text-muted small">
-                                    <i class="fa-solid fa-briefcase me-1"></i> ${c['نوع النشاط']}
+                                    <i class="fa-solid fa-briefcase me-1"></i> ${c.activity_type}
                                 </div>
                             </div>
-                            <span class="status-badge ${badgeClass}">${c['الحالة']}</span>
+                            <span class="status-badge ${badgeClass}">${c.status}</span>
                         </div>
                         
                         <div class="p-2 bg-light rounded mb-2 border-0">
                             <small class="text-muted d-block mb-1">
-                                <i class="fa-solid fa-user-tie text-primary me-1"></i> المندوب: <strong>${c['المندوب']}</strong>
+                                <i class="fa-solid fa-user-tie text-primary me-1"></i> المندوب: <strong>${c.agent_name}</strong>
                             </small>
                             <small class="text-muted d-block">
-                                <i class="fa-solid fa-layer-group text-primary me-1"></i> الخدمة: <strong>${c['الخدمة']}</strong>
+                                <i class="fa-solid fa-layer-group text-primary me-1"></i> الخدمة: <strong>${c.service_type}</strong>
                             </small>
                         </div>
 
-                        ${c['ملاحظات'] ? `<p class="small text-secondary mb-3"><i class="fa-regular fa-note-sticky me-1"></i> ${c['ملاحظات']}</p>` : ''}
+                        ${c.notes ? `<p class="small text-secondary mb-3"><i class="fa-regular fa-note-sticky me-1"></i> ${c.notes}</p>` : ''}
                         
                         <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-2">
                             <small class="text-muted" style="font-size: 0.75rem">${date}</small>
-                            <a href="https://wa.me/2${c['رقم الهاتف']}" target="_blank" class="btn btn-sm btn-success rounded-pill px-3">
+                            <a href="https://wa.me/2${c.phone}" target="_blank" class="btn btn-sm btn-success rounded-pill px-3">
                                 <i class="fa-brands fa-whatsapp"></i> تواصل
                             </a>
                         </div>
@@ -610,9 +633,9 @@
         function filterCustomers() {
             const term = document.getElementById('searchInput').value.toLowerCase();
             const filtered = allCustomers.filter(c =>
-                String(c['الاسم']).toLowerCase().includes(term) ||
-                String(c['رقم الهاتف']).includes(term) ||
-                String(c['المندوب']).toLowerCase().includes(term)
+                String(c.customer_name).toLowerCase().includes(term) ||
+                String(c.phone).includes(term) ||
+                String(c.agent_name).toLowerCase().includes(term)
             );
             renderList(filtered);
         }
