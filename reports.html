@@ -126,6 +126,47 @@
             </a>
         </div>
 
+        <!-- Filter Section -->
+        <div class="modern-card mb-4">
+            <h6 class="fw-bold mb-3 text-primary-custom"><i class="fa-solid fa-filter me-2"></i>تصفية البيانات</h6>
+            <div class="row g-3">
+                <div class="col-6 col-md-3">
+                    <label class="small text-muted fw-bold ms-1">من تاريخ</label>
+                    <input type="date" id="filterStartDate" class="form-control form-control-custom">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="small text-muted fw-bold ms-1">إلى تاريخ</label>
+                    <input type="date" id="filterEndDate" class="form-control form-control-custom">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="small text-muted fw-bold ms-1">المندوب</label>
+                    <select id="filterAgent" class="form-select form-control-custom">
+                        <option value="">(الكل)</option>
+                        <!-- Populated Dynamically -->
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="small text-muted fw-bold ms-1">النتيجة</label>
+                    <select id="filterOutcome" class="form-select form-control-custom">
+                        <option value="">(الكل)</option>
+                        <option value="تم البيع">تم البيع</option>
+                        <option value="مهتم">مهتم</option>
+                        <option value="زيارة روتينية">زيارة روتينية</option>
+                        <option value="غير مهتم">غير مهتم</option>
+                    </select>
+                </div>
+                <div class="col-12 text-end mt-3">
+                    <button onclick="resetFilters()" class="btn btn-light rounded-pill px-4 ms-2 fw-bold text-muted">
+                        <i class="fa-solid fa-rotate-left me-2"></i> إعادة تعيين
+                    </button>
+                    <button onclick="loadReports()"
+                        class="btn bg-grad-primary rounded-pill px-4 text-white fw-bold shadow-sm border-0">
+                        <i class="fa-solid fa-magnifying-glass me-2"></i> بحث / تصفية
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Top Stats (Inspiration Style) -->
         <div class="row g-3 mb-4">
             <!-- Card 1: Total Visits (Dark) -->
@@ -137,7 +178,7 @@
                     </div>
                     <h3 id="totalVisits">0</h3>
                     <div class="mt-3 small opacity-50">
-                        <i class="fa-solid fa-check-circle"></i> تم التحديث للتو
+                        <i class="fa-solid fa-check-circle"></i> النتائج الحالية
                     </div>
                 </div>
             </div>
@@ -151,7 +192,7 @@
                     </div>
                     <h3 id="totalSales">0</h3>
                     <div class="progress mt-3" style="height: 4px; background: rgba(255,255,255,0.3);">
-                        <div class="progress-bar bg-white" style="width: 60%"></div>
+                        <div class="progress-bar bg-white" id="salesProgress" style="width: 0%"></div>
                     </div>
                 </div>
             </div>
@@ -174,12 +215,12 @@
             <div class="col-12 col-sm-6 col-lg-3">
                 <div class="stat-card-custom bg-light-card">
                     <div class="d-flex justify-content-between mb-3">
-                        <p>المناديب النشطين</p>
+                        <p>المناديب</p>
                         <i class="fa-solid fa-users text-muted opacity-50"></i>
                     </div>
                     <h3 id="totalAgents">0</h3>
                     <div class="mt-3 small text-success fw-bold">
-                        <i class="fa-solid fa-arrow-up"></i> نشطين اليوم
+                        <i class="fa-solid fa-arrow-up"></i> في هذا التقرير
                     </div>
                 </div>
             </div>
@@ -190,7 +231,9 @@
             <div class="col-lg-8">
                 <div class="chart-box">
                     <h5 class="fw-bold mb-4">أداء المناديب</h5>
-                    <canvas id="agentChart"></canvas>
+                    <div style="height: 300px;">
+                        <canvas id="agentChart"></canvas>
+                    </div>
                 </div>
             </div>
             <div class="col-lg-4">
@@ -205,7 +248,7 @@
 
         <!-- Recent Table -->
         <div class="mb-5">
-            <h5 class="fw-bold mb-3">سجل أحدث العمليات</h5>
+            <h5 class="fw-bold mb-3">سجل الزيارات (مفلتر)</h5>
             <div class="table-responsive">
                 <table class="table table-custom">
                     <thead>
@@ -232,98 +275,163 @@
         const supabaseKey = 'sb_publishable_Mueecz_BEvJhV9Ff6MsH9A_VggHGgUO';
         const client = supabase.createClient(supabaseUrl, supabaseKey);
 
-        async function loadReports() {
+        let agentChartInstance = null;
+        let outcomeChartInstance = null;
+
+        async function loadFilters() {
+            // Populate Agent Filter
             try {
-                // Fetch all data
-                const { data, error } = await client
+                const { data, error } = await client.from('customers').select('agent_name');
+                if (!error && data) {
+                    const uniqueAgents = [...new Set(data.map(i => i.agent_name).filter(Boolean))].sort();
+                    const select = document.getElementById('filterAgent');
+                    uniqueAgents.forEach(agent => {
+                        const opt = document.createElement('option');
+                        opt.value = agent;
+                        opt.innerText = agent;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadReports() {
+            // Get Filter Values
+            const startDate = document.getElementById('filterStartDate').value;
+            const endDate = document.getElementById('filterEndDate').value;
+            const agent = document.getElementById('filterAgent').value;
+            const outcome = document.getElementById('filterOutcome').value;
+
+            try {
+                let query = client
                     .from('customers')
                     .select('*')
                     .order('created_at', { ascending: false });
 
+                // Apply Filters
+                if (startDate) query = query.gte('created_at', startDate + 'T00:00:00');
+                if (endDate) query = query.lte('created_at', endDate + 'T23:59:59');
+                if (agent) query = query.eq('agent_name', agent);
+                if (outcome) query = query.eq('visit_outcome', outcome);
+
+                const { data, error } = await query;
+
                 if (error) throw error;
 
                 // 1. Calculate Top Stats
-                document.getElementById('totalVisits').innerText = data.length;
-                document.getElementById('totalSales').innerText = data.filter(i => i.visit_outcome === 'تم البيع').length;
+                const total = data.length;
+                const sales = data.filter(i => i.visit_outcome === 'تم البيع').length;
+
+                document.getElementById('totalVisits').innerText = total;
+                document.getElementById('totalSales').innerText = sales;
                 document.getElementById('totalHot').innerText = data.filter(i => i.visit_outcome === 'مهتم').length;
 
+                // Agents in current selection
                 const uniqueAgents = [...new Set(data.map(item => item.agent_name))];
                 document.getElementById('totalAgents').innerText = uniqueAgents.length;
 
-                // 2. Prepare Chart Data (Agents)
-                const agentCounts = {};
-                data.forEach(d => {
-                    const name = d.agent_name || 'غير معروف';
-                    agentCounts[name] = (agentCounts[name] || 0) + 1;
-                });
+                // Update Progress Bar
+                const conversionRate = total > 0 ? (sales / total) * 100 : 0;
+                document.getElementById('salesProgress').style.width = `${conversionRate}%`;
 
-                new Chart(document.getElementById('agentChart'), {
-                    type: 'bar',
-                    data: {
-                        labels: Object.keys(agentCounts),
-                        datasets: [{
-                            label: 'عدد الزيارات',
-                            data: Object.values(agentCounts),
-                            backgroundColor: '#2563eb',
-                            borderRadius: 8,
-                            barThickness: 20
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: { legend: { display: false } },
-                        scales: { y: { beginAtZero: true, grid: { borderDash: [5, 5] } }, x: { grid: { display: false } } }
-                    }
-                });
+                // 2. Charts Logic
+                updateCharts(data);
 
-                // 3. Prepare Chart Data (Outcomes)
-                const outcomes = {};
-                data.forEach(d => {
-                    const out = d.visit_outcome || 'غير محدد';
-                    outcomes[out] = (outcomes[out] || 0) + 1;
-                });
-
-                new Chart(document.getElementById('outcomeChart'), {
-                    type: 'doughnut',
-                    data: {
-                        labels: Object.keys(outcomes),
-                        datasets: [{
-                            data: Object.values(outcomes),
-                            backgroundColor: ['#dbeafe', '#2563eb', '#10b981', '#f97316'],
-                            borderWidth: 0
-                        }]
-                    },
-                    options: { cutout: '70%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } } }
-                });
-
-                // 4. Fill Table
+                // 3. Fill Table
                 const tbody = document.getElementById('reportTableBody');
-                data.slice(0, 50).forEach(row => { // Show last 50
-                    let badgeClass = 'bg-light text-dark';
-                    if (row.visit_outcome == 'تم البيع') badgeClass = 'bg-success text-white';
-                    if (row.visit_outcome == 'مهتم') badgeClass = 'bg-warning text-dark';
+                tbody.innerHTML = '';
 
-                    tbody.innerHTML += `
-                        <tr>
-                            <td class="fw-bold text-primary-custom">
-                                <i class="fa-regular fa-user-circle me-1"></i> ${row.agent_name || '-'}
-                            </td>
-                            <td class="fw-bold">${row.customer_name}</td>
-                            <td><span class="text-muted small">${row.activity_type}</span></td>
-                            <td><span class="badge ${badgeClass} rounded-pill border fw-normal px-3">${row.visit_outcome}</span></td>
-                            <td class="text-muted small">${new Date(row.created_at).toLocaleDateString('ar-EG')}</td>
-                        </tr>
-                    `;
-                });
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">لا توجد نتائج مطابقة للتصفية</td></tr>';
+                } else {
+                    data.slice(0, 50).forEach(row => {
+                        let badgeClass = 'bg-light text-dark';
+                        if (row.visit_outcome == 'تم البيع') badgeClass = 'bg-success text-white';
+                        if (row.visit_outcome == 'مهتم') badgeClass = 'bg-warning text-dark';
+
+                        tbody.innerHTML += `
+                            <tr>
+                                <td class="fw-bold text-primary-custom">
+                                    <i class="fa-regular fa-user-circle me-1"></i> ${row.agent_name || '-'}
+                                </td>
+                                <td class="fw-bold">${row.customer_name}</td>
+                                <td><span class="text-muted small">${row.activity_type}</span></td>
+                                <td><span class="badge ${badgeClass} rounded-pill border fw-normal px-3">${row.visit_outcome}</span></td>
+                                <td class="text-muted small">${new Date(row.created_at).toLocaleDateString('ar-EG')}</td>
+                            </tr>
+                        `;
+                    });
+                }
 
             } catch (err) {
                 console.error('Error loading reports', err);
+                Swal.fire('خطأ', 'حدث خطأ أثناء تحميل البيانات', 'error');
             }
+        }
+
+        function updateCharts(data) {
+            // Agent Chart
+            const agentCounts = {};
+            data.forEach(d => {
+                const name = d.agent_name || 'غير معروف';
+                agentCounts[name] = (agentCounts[name] || 0) + 1;
+            });
+
+            if (agentChartInstance) agentChartInstance.destroy();
+            agentChartInstance = new Chart(document.getElementById('agentChart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(agentCounts),
+                    datasets: [{
+                        label: 'عدد الزيارات',
+                        data: Object.values(agentCounts),
+                        backgroundColor: '#2563eb',
+                        borderRadius: 8,
+                        barThickness: 30
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            // Outcome Chart
+            const outcomes = {};
+            data.forEach(d => {
+                const out = d.visit_outcome || 'غير محدد';
+                outcomes[out] = (outcomes[out] || 0) + 1;
+            });
+
+            if (outcomeChartInstance) outcomeChartInstance.destroy();
+            outcomeChartInstance = new Chart(document.getElementById('outcomeChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(outcomes),
+                    datasets: [{
+                        data: Object.values(outcomes),
+                        backgroundColor: ['#dbeafe', '#2563eb', '#10b981', '#f97316'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { cutout: '70%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } } }
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('filterStartDate').value = '';
+            document.getElementById('filterEndDate').value = '';
+            document.getElementById('filterAgent').value = '';
+            document.getElementById('filterOutcome').value = '';
+            loadReports();
         }
 
         async function init() {
             const { data: { session } } = await client.auth.getSession();
             if (!session) { window.location.href = 'auth.html'; return; }
+            await loadFilters();
             loadReports();
         }
 
